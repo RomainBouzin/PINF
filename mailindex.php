@@ -30,60 +30,79 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['send'])) {
         setEventMessage('Jeton de sécurité invalide.', 'errors');
         header("Location: ".$_SERVER['PHP_SELF']);
         exit();
-    } else {
-        $mail = new PHPMailer(true);
+    }
 
-        try {
-            // Debug SMTP (mettre à 2 pour voir les logs détaillés)
-            $mail->SMTPDebug = 0;
-            $mail->isSMTP();
-            $mail->Host       = 'smtp.gmail.com';
-            $mail->SMTPAuth   = true;
-            $mail->Username   = '2it.pinf@gmail.com';
-            $mail->Password   = 'jzfk cohr afdb okbl'; // Remplace par un App Password
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port       = 587;
-
-            $mail->setFrom('2it.pinf@gmail.com', 'Harmonie');
-            $mail->addAddress($to);
-
-            // Gestion des pièces jointes
-            if (!empty($_FILES['attachments']['name'][0])) {
-                for ($i = 0; $i < count($_FILES['attachments']['name']); $i++) {
-                    if ($_FILES['attachments']['error'][$i] == 0) {
-                        $mail->addAttachment($_FILES['attachments']['tmp_name'][$i], $_FILES['attachments']['name'][$i]);
-                    }
-                }
-            }
-
-            // Envoyer en texte brut
-            $mail->isHTML(true); // activer le HTML
-            $mail->Subject = $subject;
-
-            // Corps du message en texte brut avec le lien
-            $mail->Body = $content . "<br><br>Formulaire: " . $form_link;
-
-            // footer avec les données de l'harmonie
-            $mail->Body .= "<br><br>--<br><strong>Association Lyre & Harmonie de Lumbres</strong><br>";
-            $mail->Body .= "Adresse: <br>";
-            $mail->Body .= "Téléphone: <br>";
-            $mail->Body .= "Email: <br>";
-            $mail->Body .= "Site web: <br><br>";
-            $mail->Body .= "<a href='http://localhost/dolibarr-develop/dolibarr-develop/htdocs/custom/mail/mailindex.php' style='background-color:rgb(73, 91, 179); border: none; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; width: 90%'>Visiter le site</a>";
-            
-            // Envoi de l'email
-            $mail->send();
-
-            // Stocker un message de succès
-            setEventMessage('Email envoyé avec succès!', 'mesgs');
-
-            // Redirection pour éviter la soumission multiple
-            header("Location: " . $_SERVER['PHP_SELF']);
+    // Envoi à tous les utilisateurs si "@everyone" est utilisé
+    if ($to == "@everyone") {
+        $sql = "SELECT email FROM llx_e_mail WHERE email != ''";
+        $resql = $db->query($sql);
+    
+        if (!$resql) {
+            setEventMessage('Erreur SQL : ' . $db->lasterror(), 'errors');
+            header("Location: ".$_SERVER['PHP_SELF']);
             exit();
-        } catch (Exception $e) {
-            setEventMessage('Erreur lors de l\'envoi: ' . $mail->ErrorInfo, 'errors');
+        }
+    
+        $to = "";
+        while ($obj = $db->fetch_object($resql)) {
+            $to .= $obj->email . ",";
+        }
+        $to = rtrim($to, ",");
+    
+        if (empty($to)) {
+            setEventMessage('Aucune adresse e-mail trouvée pour "@everyone".', 'errors');
+            header("Location: ".$_SERVER['PHP_SELF']);
+            exit();
         }
     }
+    
+    $mail = new PHPMailer(true);
+    
+    try {
+        $mail->SMTPDebug = 0;
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = '2it.pinf@gmail.com';
+        $mail->Password   = 'jzfk cohr afdb okbl'; // Remplacez par un App Password
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+    
+        $mail->setFrom('2it.pinf@gmail.com', 'Harmonie');
+        foreach (explode(',', $to) as $email) {
+            $email = trim($email);
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $mail->addAddress($email);
+            } else {
+                setEventMessage('Adresse e-mail invalide : ' . $email, 'errors');
+            }
+        }
+    
+        // Gestion des pièces jointes
+        if (!empty($_FILES['attachments']['name'][0])) {
+            for ($i = 0; $i < count($_FILES['attachments']['name']); $i++) {
+                if ($_FILES['attachments']['error'][$i] == 0) {
+                    $mail->addAttachment($_FILES['attachments']['tmp_name'][$i], $_FILES['attachments']['name'][$i]);
+                }
+            }
+        }
+    
+        $mail->isHTML(true);
+        $mail->Subject = $subject;
+        $mail->Body = nl2br($content) . "<br><br>Formulaire: " . $form_link;
+        
+        $mail->Body .= "<br><br>--<br><strong>Association Lyre & Harmonie de Lumbres</strong><br>";
+        $mail->Body .= "Adresse: ... <br>Téléphone: ... <br>Email: ... <br>Site web: ... <br><br>";
+        $mail->Body .= "<a href='http://localhost/dolibarr-develop/dolibarr-develop/htdocs/custom/mail/mailindex.php' style='background-color:rgb(73, 91, 179); border: none; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer; width: 90%'>Visiter le site</a>";
+    
+        $mail->send();
+        setEventMessage('Email envoyé avec succès!', 'mesgs');
+    } catch (Exception $e) {
+        setEventMessage('Erreur lors de l\'envoi: ' . $mail->ErrorInfo, 'errors');
+    }
+    
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
 }
 
 // Affichage de l'interface utilisateur Dolibarr
@@ -95,12 +114,6 @@ llxHeader("", $langs->trans("MailArea"));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-		#id-right {
-			background-color: rgb(217, 217, 217);
-		}
-		body {
-			background-color: rgb(217, 217, 217);
-		}
         ::placeholder {
             color: black;
             text-align: center;
@@ -194,7 +207,7 @@ llxHeader("", $langs->trans("MailArea"));
             <input type="hidden" name="token" value="<?php echo newToken(); ?>">
             
             <div class="form-group">
-                <input type="email" name="to" id="to" placeholder="Adresse mail" required>
+                <input type="text" name="to" id="to" placeholder="Adresse mail" required>
             </div>
             
             <div class="form-group">
@@ -202,7 +215,7 @@ llxHeader("", $langs->trans("MailArea"));
             </div>
             
             <div class="form-group">
-                <textarea name="content" id="content" placeholder="Contenu" required></textarea>
+                <textarea name="content" id="bodyemail " placeholder="Contenu" required></textarea>
             </div>
             
             <div class="form-group">
